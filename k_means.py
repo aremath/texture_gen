@@ -2,9 +2,14 @@ from PIL import Image
 import collections
 import random
 
+#TODO: implement other RGB color measures
 def pixel_distance(p1, p2):
     """straight 3-d euclidean distance (assume RGB)"""
     return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)**0.5
+
+def weighted_pixel_distance(p1, p2):
+    """straight 3-d euclidean distance (assume RGB)"""
+    return (2*(p1[0] - p2[0])**2 + 4*(p1[1] - p2[1])**2 + 3*(p1[2] - p2[2])**2)**0.5
 
 def count_pixels(image):
     """return a Counter of key - pixel value"""
@@ -15,7 +20,7 @@ def count_pixels(image):
     return out
 
 def closest_mean(pixel, means):
-    l = sorted(means, key=lambda x: pixel_distance(pixel, x))
+    l = sorted(means, key=lambda x: weighted_pixel_distance(pixel, x))
     return l[0]
 
 def add_pixels(p1, p2):
@@ -32,7 +37,7 @@ def centroid(counter):
 def mean_distance(means1, means2):
     """find the total distance between two sets of means"""
     assert len(means1) == len(means2)
-    dists = [pixel_distance(means1[i], means2[i]) for i in range(len(means1))]
+    dists = [weighted_pixel_distance(means1[i], means2[i]) for i in range(len(means1))]
     return sum(dists)
 
 def choose_means(pixel_count, n_means, threshold=0.01):
@@ -58,6 +63,7 @@ def choose_means(pixel_count, n_means, threshold=0.01):
         print(d)
         if d <= threshold:
             break
+    print("Done")
     # convert to integer
     return [tuple(map(int, list(m))) for m in means]
 
@@ -75,5 +81,5 @@ def k_means(filename, out_filename, n_means):
     out.save(out_filename)
 
 if __name__ == "__main__":
-    k_means("faceswap.png", "img.jpg", 8)
+    k_means("img.jpg", "ayy.png", 8)
 
