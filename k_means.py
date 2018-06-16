@@ -1,38 +1,12 @@
+# Use k-means clustering for image partitioning
 from PIL import Image
 import collections
 import random
-
-#TODO: implement other RGB color measures
-def pixel_distance(p1, p2):
-    """straight 3-d euclidean distance (assume RGB)"""
-    return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)**0.5
-
-def weighted_pixel_distance(p1, p2):
-    """straight 3-d euclidean distance (assume RGB)"""
-    return (2*(p1[0] - p2[0])**2 + 4*(p1[1] - p2[1])**2 + 3*(p1[2] - p2[2])**2)**0.5
-
-def count_pixels(image):
-    """return a Counter of key - pixel value"""
-    out = collections.Counter()
-    for x in range(image.size[0]):
-        for y in range(image.size[1]):
-            out[image.getpixel((x, y))] += 1
-    return out
+from pixel import *
 
 def closest_mean(pixel, means):
     l = sorted(means, key=lambda x: weighted_pixel_distance(pixel, x))
     return l[0]
-
-def add_pixels(p1, p2):
-    return (p1[0] + p2[0], p1[1] + p2[1], p1[2] + p2[2])
-
-def centroid(counter):
-    """find the centroid given a counter of key - pixel value, value - number of that pixel"""
-    total_n = sum(counter.values())
-    pos = (0, 0, 0)
-    for p in counter.elements():
-        pos = add_pixels(pos, p)
-    return (pos[0]/total_n, pos[1]/total_n, pos[2]/total_n)
 
 def mean_distance(means1, means2):
     """find the total distance between two sets of means"""
@@ -69,17 +43,11 @@ def choose_means(pixel_count, n_means, threshold=0.01):
 
 def k_means(filename, out_filename, n_means):
     im = Image.open(filename)
-    out = Image.new("RGBA", im.size)
     pixel_count = count_pixels(im)
     means = choose_means(pixel_count, n_means, threshold=2)
-    pixels = []
-    for y in range(im.size[1]):
-        for x in range(im.size[0]):
-            p = im.getpixel((x, y))
-            pixels.append(closest_mean(p, means))
-    out.putdata(pixels)
+    out = image_copy_transform(im, lambda x: closest_mean(x, means))
     out.save(out_filename)
 
 if __name__ == "__main__":
-    k_means("img.jpg", "ayy.png", 8)
+    k_means("02.jpg", "ayy.png", 12)
 
