@@ -39,6 +39,10 @@ def int_centroid(counter):
         pos = add_pixels(pos, p)
     return (int(pos[0]/total_n), int(pos[1]/total_n), int(pos[2]/total_n))
 
+def closest_mean(pixel, means):
+    l = sorted(means, key=lambda x: weighted_pixel_distance(pixel, x))
+    return l[0]
+
 def image_copy_transform(im, mapping):
     out = Image.new("RGBA", im.size)
     pixels = []

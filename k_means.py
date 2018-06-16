@@ -4,10 +4,6 @@ import collections
 import random
 from pixel import *
 
-def closest_mean(pixel, means):
-    l = sorted(means, key=lambda x: weighted_pixel_distance(pixel, x))
-    return l[0]
-
 def mean_distance(means1, means2):
     """find the total distance between two sets of means"""
     assert len(means1) == len(means2)
