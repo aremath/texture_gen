@@ -45,5 +45,5 @@ def k_means(filename, out_filename, n_means):
     out.save(out_filename)
 
 if __name__ == "__main__":
-    k_means("02.jpg", "ayy.png", 12)
+    k_means("scrippsart_small.jpg", "kmeans.png", 5)
 

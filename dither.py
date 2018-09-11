@@ -63,7 +63,7 @@ def dither(in_image, palette, matrix_size):
     return out
     
 if __name__ == "__main__":
-    im = Image.open("img.jpg")
+    im = Image.open("scrippsart_median.png")
     #TODO uniform black to white palette function
-    out = dither(im, bw_palette(6), 4)
-    out.save("ditbeans.png")
+    out = dither(im, bw_palette(5), 8)
+    out.save("dither.png")

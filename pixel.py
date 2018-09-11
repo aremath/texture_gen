@@ -31,6 +31,14 @@ def centroid(counter):
         pos = add_pixels(pos, p)
     return (pos[0]/total_n, pos[1]/total_n, pos[2]/total_n)
 
+def xy_average(im, xys):
+    total_n = len(xys)
+    pos = (0,0,0)
+    for xy in xys:
+        if xy[0] >= 0 and xy[0] < im.size[0] and xy[1] >= 0 and xy[1] < im.size[1]:
+            pos = add_pixels(pos, im.getpixel(xy))
+    return (int(pos[0]/total_n), int(pos[1]/total_n), int(pos[2]/total_n))
+
 def int_centroid(counter):
     """find the centroid given a counter of key - pixel value, value - number of that pixel"""
     total_n = sum(counter.values())

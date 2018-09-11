@@ -72,4 +72,4 @@ def median_cut(filename, out_filename, n_iters):
     print("Done")
 
 if __name__ == "__main__":
-    median_cut("02.jpg", "lmao.png", 3)
+    median_cut("scrippsart_small.jpg", "median.png", 3)
