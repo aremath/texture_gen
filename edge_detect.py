@@ -21,7 +21,10 @@ def edge_detection(im, threshold):
     return edges
 
 def edge_image(im, threshold):
+    print("Finding Edges")
     edges = edge_detection(im, threshold)
+    print("Cleaning Edges")
+    edges = clean_edges(im, edges, 6)
     out = Image.new("RGBA", im.size)
     pixels = []
     for y in range(im.size[1]):
@@ -33,6 +36,21 @@ def edge_image(im, threshold):
             pixels.append(p)
     out.putdata(pixels)
     return out
+
+# Removes connected components of size less than threshold from edges
+def clean_edges(im, edges, threshold):
+    new_edges = set()
+    while len(edges) > 0:
+        e = edges.pop()
+        #TODO: x in edges might not work...
+        # Find the connected component that contains e
+        _, _, f = image_bfs(im, e, None, reach_pred = lambda x: x in edges)
+        if len(f) >= threshold:
+            new_edges |= f
+        # Regardless of whether we're keeping them, we've processed all the xys
+        # in this connected component
+        edges -= f
+    return new_edges
 
 def edge_detect(filename, out_filename, threshold):
     im = Image.open(filename)
@@ -180,6 +198,58 @@ def edge_blur(filename, out_filename, threshold, maxblur):
     out = edge_blur_transform(im, edges, maxblur)
     out.save(out_filename)
 
+def find_partition(im, edges):
+    to_partition = im_xys(im)
+    to_partition -= edges
+    partitions = []
+    while len(to_partition) > 0:
+        p = to_partition.pop()
+        _,_,f = image_bfs(im, p, None, reach_pred = lambda x: x not in edges)
+        partitions.append(f)
+        to_partition -= f
+    return partitions
+
+def mk_color_dict(im, parts):
+    colors = [xy_average(im, p) for p in parts]
+    color_dict = {}
+    for i, part in enumerate(parts):
+        color = colors[i]
+        for p in part:
+            color_dict[p] = color
+    return color_dict
+
+def paint_partitions(im, parts, edges):
+    out = Image.new("RGBA", im.size)
+    pixels = []
+    print("Finding Colors")
+    color_dict = mk_color_dict(im, parts)
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            if (x, y) in edges:
+                #p = im.getpixel((x,y))
+                p = (0,0,0)
+            else:
+                p = color_dict[(x,y)]
+            pixels.append(p)
+    out.putdata(pixels)
+    return out
+
+def edge_regions(filename, out_filename, edge_threshold, size_threshold):
+    im = Image.open(filename)
+    print("Finding Edges")
+    edges = edge_detection(im, edge_threshold)
+    print("Cleaning Edges")
+    edges = clean_edges(im, edges, size_threshold)
+    print("Finding Partition")
+    parts = find_partition(im, edges)
+    print("Painting Partition")
+    out = paint_partitions(im, parts, edges)
+    out.save(out_filename)
+
 if __name__ == "__main__":
-    edge_blur("charles_1.jpg", "edge_detect.png", 40, 4)
+    edge_regions("img/Library.jpg", "edge_detect.png", 20, 15)
+
+#TODO:
+# Ignore pixels where the search distance is large but the euclidean dist is small
+# Cellular automaton
 
