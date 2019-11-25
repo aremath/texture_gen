@@ -145,4 +145,5 @@ def generate_tiles(image, size):
 
 
 if __name__ == "__main__":
-	texture_gen("sm_norfair_2.png")
+	texture_gen("sm_norfair_1.png")
+

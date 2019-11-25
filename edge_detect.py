@@ -4,7 +4,13 @@ import collections
 import random
 from pixel import *
 
-#TODO - normalize threshold
+#TODO - normalize threshold to the overall contrast of the image?
+#TODO - dynamic threshold based on brightness / contrast measure in each part of the image
+# -> Darker parts of the image tend to have a lower contrast, so scale the threshold based on
+# the brightness of an nxn neighborhood centered on the pixel.
+#TODO - Hue distance vs. Brightness distance - Instead of using a comprehensive distance measure, could
+# have a metric purely based on hue or purely based on brightness (convert to an HSL space?), then
+# can also do some kind of linear interpolation between the two.
 def edge_detection(im, threshold):
     edges = set([])
     for y in range(im.size[1]):
@@ -44,7 +50,8 @@ def clean_edges(im, edges, threshold):
         e = edges.pop()
         #TODO: x in edges might not work...
         # Find the connected component that contains e
-        _, _, f = image_bfs(im, e, None, reach_pred = lambda x: x in edges)
+        _, _, f = image_bfs(im, e, None, reach_pred = lambda x: x in edges, diag_ok=False)
+        #_, _, f = image_bfs(im, e, None, reach_pred = lambda x: x in edges, diag_ok=False)
         if len(f) >= threshold:
             new_edges |= f
         # Regardless of whether we're keeping them, we've processed all the xys
@@ -247,7 +254,7 @@ def edge_regions(filename, out_filename, edge_threshold, size_threshold):
     out.save(out_filename)
 
 if __name__ == "__main__":
-    edge_regions("img/Library.jpg", "edge_detect.png", 20, 15)
+    edge_regions("img/Library.jpg", "edge_detect.png", 20, 20)
 
 #TODO:
 # Ignore pixels where the search distance is large but the euclidean dist is small
