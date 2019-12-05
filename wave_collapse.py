@@ -35,22 +35,36 @@ import math
 # Tiles T (list of n+1-arrays of size t * k)
 
 def wavefunction_collapse(input_array, output_array, tile_size):
+    niters = 0
     #print(output_array)
     #print(input_array)
     print("Tile Size: {}".format(tile_size))
     tiles = find_tiles(input_array, tile_size)
     print("Found {} tiles".format(len(tiles)))
     print("Initializing Matches")
-    matches, subs = init_matches(output_array, tiles, tile_size)
+    olds, matches, subs = init_matches(output_array, tiles, tile_size)
     while None in output_array:
+        print("Iteration: {}".format(niters))
+        niters += 1
         to_collapse = find_min_entropy(output_array, matches)
         if to_collapse is not None:
-            print("Collapsed {}".format(to_collapse))
             collapse(matches, output_array, to_collapse)
-            recalc(matches, output_array, subs, to_collapse, tiles, tile_size)
-        #TODO: use old values to determine pixel color
+            print("Collapsed {} to {}".format(to_collapse, output_array[to_collapse]))
+            recalc(matches, output_array, subs, to_collapse, tiles, tile_size, olds)
         else:
+            print("Done Collapsing")
             break
+        # Debug
+        #i = copy_replace_none(output_array, (255,255,255))
+        #i_out = image_from_1d_array(i)
+        #i_out.save("out_{}.png".format(niters))
+        
+    #TODO use the old values to determine pixel color
+    # Use the old nonzero dist to collapse the rest
+    #nones = find_none(output_array)
+    #for n in nones:
+    #    print(olds[n])
+    #    collapse(olds, output_array, n)
     return output_array
 
 def image_to_array(image):
@@ -67,6 +81,27 @@ def image_to_1d_array(image):
 def array_to_image(array):
     a = array.astype(np.uint8)
     return Image.fromarray(a)
+
+def copy_replace_none(array, w):
+    out = np.empty(array.shape, dtype=object)
+    for i in np.ndindex(array.shape):
+        if array[i] is None:
+            out[i] = w
+        else:
+            out[i] = array[i]
+    return out
+
+def replace_none(array, w):
+    for i in np.ndindex(array.shape):
+        if array[i] is None:
+            array[i] = w
+
+def find_none(array):
+    nones = []
+    for i in np.ndindex(array.shape):
+        if array[i] is None:
+            nones.append(i)
+    return nones
 
 def image_from_1d_array(array):
     new_shape = list(array.shape[:-1]) + [3]
@@ -125,22 +160,29 @@ ventropy = np.vectorize(entropy)
 
 def find_min_entropy(output_array, matches):
     e = ventropy(matches)
+    #print("Average Entropy: {}".format(np.mean(e)))
     # Find the minimum entropy
     min_e = np.inf
     for index in np.ndindex(e.shape):
         # Minimum over only unconstrained tiles
         if output_array[index] is None:
-            if e[index] < min_e:
+            #print("None at: {}".format(index))
+            #print("Matches: {}".format(matches[index]))
+            #print("With Entropy: {}".format(e[index]))
+            # Want collapsable elements
+            if e[index] < min_e and len(matches[index][0]) > 0:
                 min_e = e[index]
     # Find all indices for the minimum entropy
     min_is = []
     for index in np.ndindex(e.shape):
-        if e[index] == min_e:
+        if e[index] == min_e and output_array[index] is None and len(matches[index][0]) > 0:
             min_is.append(index)
     print("{} options for collapse with entropy {}".format(len(min_is), min_e))
     # Only need one -> choose randomly
     if len(min_is) > 0:
-        return random.choice(min_is)
+        c = random.choice(min_is)
+        print("Counter: {}".format(matches[c]))
+        return c
     else:
         return None
 
@@ -162,6 +204,7 @@ def match_array(shape):
 def init_matches(output_array, tiles, tile_size):
     subs = set_array(output_array.shape)
     matches = match_array(output_array.shape)
+    olds = match_array(output_array.shape)
     for g_index in tile_placement_iter(output_array, tile_size):
         for i,t in enumerate(tiles):
             # If t matches at the given index, update
@@ -171,7 +214,9 @@ def init_matches(output_array, tiles, tile_size):
                     a_index = eltwise_plus(g_index, t_index)
                     matches[a_index][0][t[t_index]] +=1
                     matches[a_index][1] += 1
-    return matches, subs
+                    olds[a_index][0][t[t_index]] +=1
+                    olds[a_index][1] += 1
+    return olds, matches, subs
 
 # Does tile fit at pos in array?
 def is_match(array, matches, tile, pos, check_matches=False):
@@ -196,32 +241,62 @@ def collapse(matches, output_array, index):
     assert output_array[index] is None
     collapse_val = random.choices(list(c.keys()), weights=list(c.values()))[0]
     output_array[index] = collapse_val
-    matches[index] = (c, 0)
+    matches[index] = (Counter(), 0)
 
 #TODO old matches
-def recalc(matches, output_array, subs, index, tiles, tile_size):
+def recalc(matches, output_array, subs, index, tiles, tile_size, olds):
     # Calculate the region affected by collapsing the value at index
     # First, calculate the minimum index
     min_index = eltwise_op(index, tile_size, lambda t: max(t[0] - t[1] + 1, 0))
-    max_possible = eltwise_minus(matches.shape, tile_size)
-    max_index = [min(min_index[i] + tile_size[i], max_possible[i]) for i in range(len(tile_size))]
+    max_possible = eltwise_minus(matches.shape, tile_size) #TODO can keep
+    max_index = [min(min_index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))]
     indices = eltwise_minus(max_index, min_index)
+    print("Indices:")
+    print("Pos: {}".format(index))
+    print("Affecting {} through {}".format(min_index, max_index))
+    print("For a total of {}".format(indices))
     for t_index in np.ndindex(indices):
         # Find the global index for updating
         g_index = eltwise_plus(min_index, t_index)
         # Update it!
         # For each of the tiles that was placed there, see if it still fits
-        for t_index in subs[g_index]:
-            t = tiles[t_index]
+        to_remove = set()
+        assert len(subs[g_index]) > 0, g_index
+        for t in subs[g_index]:
+            tile = tiles[t]
             # If it is not a match, then we need to remove it
-            if not is_match(output_array, matches, t, g_index):
-                # First, remove it from subs
-                subs[g_index].remove(t_index)
+            if not is_match(output_array, matches, tile, g_index):
+                # First, remove it from subs (not during iteration)
+                to_remove.add(t)
                 # Then, remove its influence from the other tiles
                 for s_index in np.ndindex(tile_size):
                     gs_index = eltwise_plus(g_index, s_index)
-                    matches[g_index][0][t[s_index]] -= 1
-                    matches[g_index][1] -= 1
+                    #Debug:
+                    m_d = matches[gs_index][0]
+                    m_t = matches[gs_index][1]
+                    assert sum(m_d.values()) == m_t, "Before: {} w {} @ {}".format(m_d, m_t, gs_index)
+                    # If the total is zero, then it is already resolved
+                    if matches[gs_index][1] != 0:
+                        match_d = matches[gs_index][0]
+                        match_d[tile[s_index]] -= 1
+                        matches[gs_index][1] -= 1
+                        if match_d[tile[s_index]] == 0:
+                            del match_d[tile[s_index]]
+                    #More Debug
+                    m_d = matches[gs_index][0]
+                    m_t = matches[gs_index][1]
+                    assert sum(m_d.values()) == m_t, "After: {} w {} @ {}".format(m_d, m_t, gs_index)
+        # Remove the tiles that no longer fit
+        print("Initially {} tiles matched".format(len(subs[g_index])))
+        subs[g_index] = subs[g_index] - to_remove
+        print("Removed {} tiles at {}".format(len(to_remove), g_index))
+    #TODO
+    # Update olds #TODO: not the right update area
+    #for t_index in np.ndindex(indices):
+    #    # Find the global index for updating
+    #    g_index = eltwise_plus(min_index, t_index)
+    #    if matches[g_index][1] != 0:
+    #        olds[g_index] = matches[g_index].copy()
     return
 
 # Get iterator over all possible values of indexes into a table of the given size
