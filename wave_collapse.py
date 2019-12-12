@@ -34,6 +34,10 @@ import math
 # Subs S (n-array of size O: set(tiles that work))
 # Tiles T (list of n+1-arrays of size t * k)
 
+#TODO: use the old distribution over a contradiction
+#TODO: wrap-around constraints so that each tile has the same number of neighbors
+#TODO: count tiles in multiplicity
+
 def wavefunction_collapse(input_array, output_array, tile_size):
     niters = 0
     #print(output_array)
@@ -51,6 +55,39 @@ def wavefunction_collapse(input_array, output_array, tile_size):
             collapse(matches, output_array, to_collapse)
             print("Collapsed {} to {}".format(to_collapse, output_array[to_collapse]))
             recalc(matches, output_array, subs, to_collapse, tiles, tile_size, olds)
+        else:
+            print("Done Collapsing")
+            break
+        # Debug
+        #i = copy_replace_none(output_array, (255,255,255))
+        #i_out = image_from_1d_array(i)
+        #i_out.save("out_{}.png".format(niters))
+        
+    #TODO use the old values to determine pixel color
+    # Use the old nonzero dist to collapse the rest
+    #nones = find_none(output_array)
+    #for n in nones:
+    #    print(olds[n])
+    #    collapse(olds, output_array, n)
+    return output_array
+
+def tilewise_wavecollapse(input_array, output_array, tile_size):
+    niters = 0
+    #print(output_array)
+    #print(input_array)
+    print("Tile Size: {}".format(tile_size))
+    tiles = find_tiles(input_array, tile_size)
+    print("Found {} tiles".format(len(tiles)))
+    print("Initializing Subs")
+    subs = init_subs(output_array, tiles, tile_size)
+    while None in output_array:
+        print("Iteration: {}".format(niters))
+        niters += 1
+        to_collapse = find_min_tiles(output_array, subs, tile_size)
+        if to_collapse is not None:
+            collapse_tile(subs, output_array, to_collapse, tiles, tile_size)
+            print("Collapsed {}".format(to_collapse))
+            recalc_tile(subs, output_array, to_collapse, tiles, tile_size)
         else:
             print("Done Collapsing")
             break
@@ -134,6 +171,10 @@ def remove_nothing_boundary(array):
         out[new_index] = array[old_index]
     return out
 
+def tile_placement_shape(array, tile_size):
+    dims = range(len(tile_size))
+    return tuple([array.shape[i] - tile_size[i] + 1 for i in dims])
+
 # All locations where a tile of the given size could be placed within the array
 # Just make sure the last item of tile_size == k
 def tile_placement_iter(array, tile_size):
@@ -158,11 +199,38 @@ def entropy(match, base=2):
 
 ventropy = np.vectorize(entropy)
 
+def check_collapsed(output_array, index, tile_size):
+    for l_index in np.ndindex(tile_size):
+        g_index = eltwise_plus(index, l_index)
+        if output_array[g_index] is None:
+            return False
+    return True
+
+def find_min_tiles(output_array, subs, tile_size):
+    min_e = np.inf
+    min_is = []
+    for index in np.ndindex(subs.shape):
+        l = len(subs[index])
+        # Minimum over only unconstrained tiles
+        if l > 0 and not check_collapsed(output_array, index, tile_size):
+            if l == min_e:
+                min_is.append(index)
+            if l < min_e:
+                min_is = [index]
+                min_e = l
+    if len(min_is) > 0:
+        print("{} options for collapse with {} choices".format(len(min_is), min_e))
+        return random.choice(min_is)
+    else:
+        return None
+
 def find_min_entropy(output_array, matches):
     e = ventropy(matches)
     #print("Average Entropy: {}".format(np.mean(e)))
     # Find the minimum entropy
     min_e = np.inf
+    #TODO: check that this optimization works
+    min_is = []
     for index in np.ndindex(e.shape):
         # Minimum over only unconstrained tiles
         if output_array[index] is None:
@@ -170,7 +238,10 @@ def find_min_entropy(output_array, matches):
             #print("Matches: {}".format(matches[index]))
             #print("With Entropy: {}".format(e[index]))
             # Want collapsable elements
+            if e[index] == min_e and len(mathces[index][0]) > 0:
+                min_is.append(index)
             if e[index] < min_e and len(matches[index][0]) > 0:
+                min_is = [index]
                 min_e = e[index]
     # Find all indices for the minimum entropy
     min_is = []
@@ -198,6 +269,14 @@ def match_array(shape):
         c = Counter()
         s[index] = [c, 0]
     return s
+
+def init_subs(output_array, tiles, tile_size):
+    subs = set_array(tile_placement_shape(output_array, tile_size))
+    for g_index in tile_placement_iter(output_array, tile_size):
+        for i,t in enumerate(tiles):
+            if is_match(output_array, None, t, g_index):
+                subs[g_index].add(i)
+    return subs
 
 # Takes the output image (which can be blank)
 # and creates a counter for each pixel of what pixel values it could be
@@ -235,6 +314,55 @@ def is_match(array, matches, tile, pos, check_matches=False):
         except IndexError:
             return False
     return True
+
+def place_tile(output_array, tile, index, tile_size):
+    for l_index in np.ndindex(tile_size):
+        g_index = eltwise_plus(l_index, index)
+        output_array[g_index] = tile[l_index]
+
+def collapse_tile(subs, output_array, index, tiles, tile_size):
+    # Convert to list to allow choosing
+    t = random.choice(list(subs[index]))
+    tile = tiles[t]
+    place_tile(output_array, tile, index, tile_size)
+    subs[index] = set([t])
+
+def recalc_tile(subs, output_array, index, tiles, tile_size):
+    # Calculate the region affected by collapsing the value at index
+    # First, calculate the minimum index
+    min_index = eltwise_op(index, tile_size, lambda t: max(t[0] - t[1] + 1, 0))
+    max_possible = eltwise_minus(output_array.shape, tile_size) #TODO can keep
+    max_index = [min(min_index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))]
+    indices = eltwise_minus(max_index, min_index)
+    print("Indices:")
+    print("Pos: {}".format(index))
+    print("Affecting {} through {}".format(min_index, max_index))
+    print("For a total of {}".format(indices))
+    for t_index in np.ndindex(indices):
+        # Find the global index for updating
+        g_index = eltwise_plus(min_index, t_index)
+        # Update it!
+        # For each of the tiles that was placed there, see if it still fits
+        to_remove = set()
+        #assert len(subs[g_index]) > 0, g_index
+        for t in subs[g_index]:
+            tile = tiles[t]
+            # If it is not a match, then we need to remove it
+            if not is_match(output_array, None, tile, g_index):
+                # First, remove it from subs (not during iteration)
+                to_remove.add(t)
+        # Remove the tiles that no longer fit
+        print("Initially {} tiles matched".format(len(subs[g_index])))
+        subs[g_index] = subs[g_index] - to_remove
+        print("Removed {} tiles at {}".format(len(to_remove), g_index))
+    #TODO
+    # Update olds #TODO: not the right update area
+    #for t_index in np.ndindex(indices):
+    #    # Find the global index for updating
+    #    g_index = eltwise_plus(min_index, t_index)
+    #    if matches[g_index][1] != 0:
+    #        olds[g_index] = matches[g_index].copy()
+    return
 
 def collapse(matches, output_array, index):
     c,t = matches[index]
@@ -325,21 +453,33 @@ class Nothing(object):
     def __eq__(self, other):
         return isinstance(other, Nothing)
 
-if __name__ == "__main__":
+def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig")
-    parser.add_argument("--out")
-    parser.add_argument("--w")
-    parser.add_argument("--h")
+    parser.add_argument("--orig", required=True, help="Path to the original image file")
+    parser.add_argument("--out", required=True, help="Path to the output file (will be created / overwritten)")
+    parser.add_argument("--w", type=int, required=True, help="Width of the output")
+    parser.add_argument("--h", type=int, required=True, help="Height of the output")
+    parser.add_argument("--tw", type=int, required=True, help="Tile height")
+    parser.add_argument("--th", type=int, required=True, help="Tile width")
+    parser.add_argument("--alg", required=True, help="pixelwise or tilewise. Controls which version of the algorithm to use.")
     args = parser.parse_args()
-    w = int(args.w)
-    h = int(args.h)
-    shape = (w, h, 3)
-    a_out = np.empty(shape, dtype=object)
-    i_in = Image.open(args.orig)
-    a_in = image_to_array(i_in)
-    print(a_in.shape)
-    wavefunction_collapse(a_in, a_out, (5,5,3))
-    i_out = array_to_image(a_out)
-    i_out.save(args.out)
+    out_shape = (args.w, args.h, 1)
+    tile_shape = (args.tw, args.th, 1)
+    return args.orig, args.out, out_shape, tile_shape, args.alg
+
+if __name__ == "__main__":
+    path_in, path_out, out_shape, tile_shape, alg = parse_args()
+    a_out = np.empty(out_shape, dtype=object)
+    i_in = Image.open(path_in)
+    a_in = image_to_1d_array(i_in)
+    if alg == "pixelwise":
+        wavefunction_collapse(a_in, a_out, tile_shape)
+    elif alg == "tilewise":
+        tilewise_wavecollapse(a_in, a_out, tile_shape)
+    else:
+        assert False, "Bad algorithm choice: please use either pixelwise or tilewise"
+    # Replace contradictions with black
+    replace_none(a_out, (0,0,0))
+    i_out = image_from_1d_array(a_out)
+    i_out.save(path_out)
 
