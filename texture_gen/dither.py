@@ -1,6 +1,7 @@
 from PIL import Image
-from pixel import *
 import numpy as np
+
+from .pixel import *
 
 def dither_map(palette, pixel_color, pixel_x, pixel_y, dither_matrix, matrix_size):
     #TODO: how to set the ratio?
