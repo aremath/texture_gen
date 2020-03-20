@@ -2,7 +2,8 @@
 from PIL import Image
 import collections
 import random
-from pixel import *
+
+from .pixel import *
 
 def mean_distance(means1, means2):
     """find the total distance between two sets of means"""

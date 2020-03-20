@@ -1,7 +1,8 @@
 # use median cuts for image partition
 from PIL import Image
-from pixel import *
 from functools import reduce
+
+from .pixel import *
 
 def max_range(pixels):
     """Find the index of the value (r,g,b) along which

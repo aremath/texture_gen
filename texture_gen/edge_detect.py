@@ -3,7 +3,7 @@ from PIL import Image
 import collections
 import random
 
-from texture_gen.pixel import *
+from .pixel import *
 
 #TODO - normalize threshold to the overall contrast of the image?
 #TODO - dynamic threshold based on brightness / contrast measure in each part of the image

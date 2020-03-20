@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 import functools
 import math
+
 # Wavefunction collapse for room generation
 # inspiration from : https://github.com/mxgmn/WaveFunctionCollapse
 # Each "pixel" is in a superposition of possible pixel values
@@ -37,6 +38,7 @@ import math
 #TODO: use the old distribution over a contradiction
 #TODO: wrap-around constraints so that each tile has the same number of neighbors
 #TODO: count tiles in multiplicity
+#TODO: multiple tile sizes
 
 def wavefunction_collapse(input_array, output_array, tile_size):
     niters = 0
@@ -47,7 +49,7 @@ def wavefunction_collapse(input_array, output_array, tile_size):
     print("Found {} tiles".format(len(tiles)))
     print("Initializing Matches")
     olds, matches, subs = init_matches(output_array, tiles, tile_size)
-    while None in output_array:
+    while not check_done(output_array):
         print("Iteration: {}".format(niters))
         niters += 1
         to_collapse = find_min_entropy(output_array, matches)
@@ -76,14 +78,18 @@ def tilewise_wavecollapse(input_array, output_array, tile_size):
     #print(output_array)
     #print(input_array)
     print("Tile Size: {}".format(tile_size))
-    tiles = find_tiles(input_array, tile_size)
-    print("Found {} tiles".format(len(tiles)))
+    #tiles = find_tiles(input_array, tile_size)
+    tiles, mults = find_tiles_mult(input_array, tile_size)
+    for n,t in enumerate(tiles):
+        t_out = image_from_1d_array(t)
+        t_out.save("tile_{}.png".format(n))
+    print("Found {} unique tiles".format(len(tiles)))
     print("Initializing Subs")
     subs = init_subs(output_array, tiles, tile_size)
-    while None in output_array:
+    while not check_done(output_array):
         print("Iteration: {}".format(niters))
         niters += 1
-        to_collapse = find_min_tiles(output_array, subs, tile_size)
+        to_collapse = find_min_tile(output_array, subs, tile_size, mults)
         if to_collapse is not None:
             collapse_tile(subs, output_array, to_collapse, tiles, tile_size)
             print("Collapsed {}".format(to_collapse))
@@ -92,9 +98,9 @@ def tilewise_wavecollapse(input_array, output_array, tile_size):
             print("Done Collapsing")
             break
         # Debug
-        #i = copy_replace_none(output_array, (255,255,255))
-        #i_out = image_from_1d_array(i)
-        #i_out.save("out_{}.png".format(niters))
+        i = copy_replace_none(output_array, (255,255,255))
+        i_out = image_from_1d_array(i)
+        i_out.save("out_{}.png".format(niters))
         
     #TODO use the old values to determine pixel color
     # Use the old nonzero dist to collapse the rest
@@ -103,6 +109,13 @@ def tilewise_wavecollapse(input_array, output_array, tile_size):
     #    print(olds[n])
     #    collapse(olds, output_array, n)
     return output_array
+
+def check_done(array):
+    for x in np.nditer(array, flags=["refs_ok"]):
+        #TODO: why does this work but not "x is None"
+        if x == None:
+            return False
+    return True
 
 def image_to_array(image):
     return np.array(image)
@@ -189,6 +202,30 @@ def find_tiles(input_array, tile_size):
         tiles.append(input_array[ixgrid])
     return tiles
 
+def array_in(a, l):
+    for i,b in enumerate(l):
+        if np.array_equal(a,b):
+            return i
+    return None
+
+# Just make sure the last item of tile_size == k
+def find_tiles_mult(input_array, tile_size):
+    tiles = []
+    # Key - index into tiles
+    # Value - number of that tile from the original image
+    mult = {}
+    for index in tile_placement_iter(input_array, tile_size):
+        ixgrid = np.ix_(*[range(index[i], index[i] + size) for i, size in enumerate(tile_size)])
+        t = input_array[ixgrid]
+        i = array_in(t,tiles)
+        if i is not None:
+            mult[i] += 1
+        else:
+            i = len(tiles)
+            tiles.append(input_array[ixgrid])
+            mult[i] = 1
+    return tiles, mult
+
 def entropy(match, base=2):
     counter, total = match
     if total == 0:
@@ -206,21 +243,31 @@ def check_collapsed(output_array, index, tile_size):
             return False
     return True
 
-def find_min_tiles(output_array, subs, tile_size):
+def calc_mult_entropy(indices, mults, base=2):
+    entropy = 0
+    total = sum([mults[i] for i in indices])
+    for i in indices:
+        p = mults[i] / total
+        entropy -= p * math.log(p, base)
+    return entropy
+
+def find_min_tile(output_array, subs, tile_size, mults):
     min_e = np.inf
     min_is = []
     for index in np.ndindex(subs.shape):
-        l = len(subs[index])
+        entropy = calc_mult_entropy(subs[index], mults)
         # Minimum over only unconstrained tiles
-        if l > 0 and not check_collapsed(output_array, index, tile_size):
-            if l == min_e:
+        if entropy > 0 and not check_collapsed(output_array, index, tile_size):
+            if entropy == min_e:
                 min_is.append(index)
-            if l < min_e:
+            if entropy < min_e:
                 min_is = [index]
-                min_e = l
+                min_e = entropy
     if len(min_is) > 0:
         print("{} options for collapse with {} choices".format(len(min_is), min_e))
-        return random.choice(min_is)
+        c = random.choice(min_is)
+        print(subs[c])
+        return c
     else:
         return None
 
@@ -238,7 +285,7 @@ def find_min_entropy(output_array, matches):
             #print("Matches: {}".format(matches[index]))
             #print("With Entropy: {}".format(e[index]))
             # Want collapsable elements
-            if e[index] == min_e and len(mathces[index][0]) > 0:
+            if e[index] == min_e and len(matches[index][0]) > 0:
                 min_is.append(index)
             if e[index] < min_e and len(matches[index][0]) > 0:
                 min_is = [index]
@@ -332,7 +379,8 @@ def recalc_tile(subs, output_array, index, tiles, tile_size):
     # First, calculate the minimum index
     min_index = eltwise_op(index, tile_size, lambda t: max(t[0] - t[1] + 1, 0))
     max_possible = eltwise_minus(output_array.shape, tile_size) #TODO can keep
-    max_index = [min(min_index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))]
+    print(max_possible)
+    max_index = tuple([min(index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))])
     indices = eltwise_minus(max_index, min_index)
     print("Indices:")
     print("Pos: {}".format(index))
@@ -352,9 +400,11 @@ def recalc_tile(subs, output_array, index, tiles, tile_size):
                 # First, remove it from subs (not during iteration)
                 to_remove.add(t)
         # Remove the tiles that no longer fit
+        print(g_index)
         print("Initially {} tiles matched".format(len(subs[g_index])))
         subs[g_index] = subs[g_index] - to_remove
-        print("Removed {} tiles at {}".format(len(to_remove), g_index))
+        #print(subs[g_index])
+        print("Removed {} tiles".format(len(to_remove), g_index))
     #TODO
     # Update olds #TODO: not the right update area
     #for t_index in np.ndindex(indices):
@@ -377,7 +427,7 @@ def recalc(matches, output_array, subs, index, tiles, tile_size, olds):
     # First, calculate the minimum index
     min_index = eltwise_op(index, tile_size, lambda t: max(t[0] - t[1] + 1, 0))
     max_possible = eltwise_minus(matches.shape, tile_size) #TODO can keep
-    max_index = [min(min_index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))]
+    max_index = tuple([min(min_index[i] + tile_size[i], max_possible[i] + 1) for i in range(len(tile_size))])
     indices = eltwise_minus(max_index, min_index)
     print("Indices:")
     print("Pos: {}".format(index))
